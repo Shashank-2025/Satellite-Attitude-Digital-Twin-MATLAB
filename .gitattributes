@@ -1,2 +1,134 @@
+%% FINAL DIGITAL TWIN: 3-AXIS SATELLITE ATTITUDE CONTROL (MATLAB)
+clc; clear; close all;
+
+%% ================= TIME =================
+dt = 0.05;
+t  = 0:dt:60;
+N  = length(t);
+
+%% ================= SATELLITE PARAMETERS =================
+I = diag([12 10 8]);    % Moment of inertia matrix
+
+Kp = diag([3 3 3]);     % PD gains
+Kd = diag([1.2 1.2 1.2]);
+
+theta_ref = [0;0;0];    % Desired orientation (deg)
+
+%% ================= STATES =================
+theta_real = zeros(3,N);
+omega_real = zeros(3,N);
+
+theta_twin = zeros(3,N);
+omega_twin = zeros(3,N);
+
+theta_real(:,1) = [15; -10; 8];
+theta_twin(:,1) = theta_real(:,1);
+
+%% ================= KALMAN FILTER =================
+A = [eye(3) dt*eye(3); zeros(3) eye(3)];
+B = [zeros(3); inv(I)*dt];
+C = [eye(3) zeros(3)];
+
+Q = 0.001*eye(6);       % Process noise
+R = 0.05*eye(3);        % Measurement noise
+
+x_hat = zeros(6,N);
+P = eye(6);
+
+%% ================= LOGS =================
+error_log = zeros(3,N);
+
+%% ================= SIMULATION LOOP =================
+for k = 1:N-1
+    
+    error = theta_ref - theta_real(:,k);
+    error_log(:,k) = error;
+    
+    % PD control torque
+    torque = Kp*error - Kd*omega_real(:,k);
+    
+    % Disturbance
+    disturbance = 0.02*randn(3,1);
+    
+    % ---- REAL SYSTEM ----
+    omega_real(:,k+1) = omega_real(:,k) + ...
+        (I\(torque + disturbance))*dt;
+    theta_real(:,k+1) = theta_real(:,k) + omega_real(:,k)*dt;
+    
+    % ---- DIGITAL TWIN ----
+    omega_twin(:,k+1) = omega_twin(:,k) + (I\torque)*dt;
+    theta_twin(:,k+1) = theta_twin(:,k) + omega_twin(:,k)*dt;
+    
+    % ---- KALMAN FILTER ----
+    x_pred = A*x_hat(:,k) + B*torque;
+    P_pred = A*P*A' + Q;
+    
+    z = theta_real(:,k) + randn(3,1)*0.1;
+    K = P_pred*C'/(C*P_pred*C' + R);
+    
+    x_hat(:,k+1) = x_pred + K*(z - C*x_pred);
+    P = (eye(6)-K*C)*P_pred;
+end
+
+%% ================= PLOTS =================
+figure('Color','w')
+subplot(3,1,1)
+plot(t,theta_real(1,:),t,theta_twin(1,:),'--','LineWidth',1.5)
+title('Roll'); grid on
+
+subplot(3,1,2)
+plot(t,theta_real(2,:),t,theta_twin(2,:),'--','LineWidth',1.5)
+title('Pitch'); grid on
+
+subplot(3,1,3)
+plot(t,theta_real(3,:),t,theta_twin(3,:),'--','LineWidth',1.5)
+title('Yaw'); grid on
+xlabel('Time (s)')
+
+figure('Color','w')
+plot(t,error_log','LineWidth',1.5)
+grid on
+title('Attitude Error Convergence')
+xlabel('Time (s)')
+ylabel('Error (deg)')
+legend('Roll','Pitch','Yaw')
+
+%% ================= 3D ANIMATION =================
+figure('Color','k')
+axis equal
+axis([-2 2 -2 2 -2 2])
+grid on
+view(3)
+xlabel('X'); ylabel('Y'); zlabel('Z')
+title('3D Satellite Attitude Motion','Color','w')
+
+sat = plot3([1 -1],[0 0],[0 0],'w','LineWidth',3);
+
+for k = 1:5:N
+    Rz = rotz(theta_real(3,k));
+    Ry = roty(theta_real(2,k));
+    Rx = rotx(theta_real(1,k));
+    R = Rz*Ry*Rx;
+    
+    pts = R*[1 -1;0 0;0 0];
+    set(sat,'XData',pts(1,:),'YData',pts(2,:),'ZData',pts(3,:));
+    drawnow
+end
+
+%% ================= FUNCTIONS =================
+function R = rotx(a)
+a = deg2rad(a);
+R = [1 0 0; 0 cos(a) -sin(a); 0 sin(a) cos(a)];
+end
+
+function R = roty(a)
+a = deg2rad(a);
+R = [cos(a) 0 sin(a); 0 1 0; -sin(a) 0 cos(a)];
+end
+
+function R = rotz(a)
+a = deg2rad(a);
+R = [cos(a) -sin(a) 0; sin(a) cos(a) 0; 0 0 1];
+end
 # Auto detect text files and perform LF normalization
 * text=auto
